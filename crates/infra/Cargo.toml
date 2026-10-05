@@ -1,0 +1,19 @@
+[package]
+name = "scroll_format_infra"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+rusqlite.workspace = true
+sysinfo.workspace = true
+which.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+directories.workspace = true
+scroll_format_core = { path = "../core" }

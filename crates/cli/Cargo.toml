@@ -1,0 +1,19 @@
+[package]
+name = "scrollfmt"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "scrollfmt"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+anyhow.workspace = true
+serde_json.workspace = true
+scroll_format_core = { path = "../core" }
+scroll_format_infra = { path = "../infra" }
+scroll_format_converters = { path = "../converters" }
+scroll_format_app = { path = "../app" }

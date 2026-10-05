@@ -1,0 +1,16 @@
+[package]
+name = "scroll_format_core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+async-trait.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+image.workspace = true

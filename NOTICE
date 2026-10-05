@@ -1,0 +1,56 @@
+格式卷轴 ScrollFormat — 第三方组件与许可声明
+================================================
+
+本项目以 MIT 许可发布。以下为项目所依赖的第三方组件、运行时与外部工具，
+各自版权归原作者所有，并遵循其各自的许可协议。
+
+一、编译期依赖（Rust crates）
+------------------------------
+- tauri / tauri-build / tauri-plugin-dialog — MIT OR Apache-2.0
+- tokio / tokio-util — MIT
+- serde / serde_json — MIT OR Apache-2.0
+- rusqlite — MIT
+- image（image-rs 及其后端）— MIT OR Apache-2.0
+- sysinfo — MIT
+- which — MIT OR Apache-2.0
+- clap — MIT OR Apache-2.0
+- uuid — MIT OR Apache-2.0
+- chrono — MIT OR Apache-2.0
+- tracing / tracing-subscriber — MIT
+- thiserror / anyhow — MIT OR Apache-2.0
+- directories — MIT OR Apache-2.0
+- futures — MIT OR Apache-2.0
+
+完整许可文本随各 crate 源码分发，位于 Cargo registry 缓存目录中。
+
+二、运行时依赖（前端 npm 包）
+------------------------------
+- react / react-dom — MIT
+- vite — MIT
+- typescript — Apache-2.0
+- tailwindcss — MIT
+- framer-motion (motion) — MIT
+- zustand — MIT
+- lucide-react — ISC
+- @tauri-apps/api、@tauri-apps/cli、@tauri-apps/plugin-dialog — MIT OR Apache-2.0
+- postcss / autoprefixer — MIT
+
+三、外部工具（运行时可选，需自行获取）
+--------------------------------------
+- FFmpeg（ffmpeg / ffprobe）— LGPL-2.1+ 或 GPL（取决于构建选项）
+  本项目仅以独立进程方式调用其命令行，不链接、不分发其二进制。
+  使用者需自行安装并遵守 FFmpeg 的许可条款。
+- Pandoc — GPL-2.0+（后续文档转换将调用）
+- LibreOffice — MPL-2.0（后续文档转换将调用）
+- calibre — GPL-3.0（后续电子书转换将调用）
+- 7-Zip — LGPL-2.1+（后续压缩包转换将调用）
+
+四、字体与图标
+--------------
+- 图标：lucide-react（ISC License）
+- 界面字体：使用系统默认字体栈，未内嵌任何第三方字体文件
+
+五、免责声明
+------------
+本软件按「现状」提供，不对任何直接或间接损失承担责任。
+用户应自行确保所用外部工具与素材的许可合规。

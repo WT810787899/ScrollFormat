@@ -1,0 +1,17 @@
+[package]
+name = "scroll_format_converters"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+rayon = "1"
+async-trait.workspace = true
+uuid.workspace = true
+image.workspace = true
+scroll_format_core = { path = "../core" }
+scroll_format_infra = { path = "../infra" }
