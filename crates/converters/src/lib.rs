@@ -1,5 +1,7 @@
 pub mod image;
 pub mod av;
+pub mod document;
+pub mod doc_builtin;
 pub mod stub;
 pub mod registry_ext;
 
@@ -18,5 +20,6 @@ pub fn unique_output_path(dir: &Path, stem: &str, ext: &str) -> PathBuf {
 
 pub use image::ImageConverter;
 pub use av::{AudioConverter, VideoConverter};
+pub use document::DocumentConverter;
 pub use stub::StubConverter;
 pub use registry_ext::build_default_registry;

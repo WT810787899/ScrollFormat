@@ -13,5 +13,14 @@ rayon = "1"
 async-trait.workspace = true
 uuid.workspace = true
 image.workspace = true
+zip = "2"
+quick-xml = "0.37"
+unicode-normalization = "0.1"
+printpdf = { version = "0.7", features = ["font_subsetting"] }
+pdf-extract = "0.7"
+# PDF 光栅化：PDFium（Chrome 同款渲染引擎），bundled 特性在编译期把
+# pdfium.dll 嵌进二进制，运行时无需任何外部工具、也无需联网
+pdfium-render = "0.9"
+pdfium-bundled = { version = "0.2", features = ["bundled"] }
 scroll_format_core = { path = "../core" }
 scroll_format_infra = { path = "../infra" }

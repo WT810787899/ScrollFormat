@@ -2,23 +2,15 @@ use std::sync::Arc;
 
 use scroll_format_core::{ConverterRegistry, FormatKind};
 
-use crate::{AudioConverter, ImageConverter, StubConverter, VideoConverter};
+use crate::{AudioConverter, DocumentConverter, ImageConverter, StubConverter, VideoConverter};
 
 pub fn build_default_registry() -> ConverterRegistry {
     let mut reg = ConverterRegistry::new();
     reg.register(FormatKind::Image, Arc::new(ImageConverter));
     reg.register(FormatKind::Audio, Arc::new(AudioConverter));
     reg.register(FormatKind::Video, Arc::new(VideoConverter));
-    reg.register(
-        FormatKind::Document,
-        Arc::new(StubConverter {
-            id: "document",
-            name: "文档转换器 (pandoc/libreoffice)",
-            kind: FormatKind::Document,
-            inputs: &["pdf", "docx", "doc", "odt", "rtf", "txt", "md", "html", "tex"],
-            outputs: &["pdf", "docx", "odt", "rtf", "txt", "md", "html"],
-        }),
-    );
+    // 文档：内置文本引擎 + pandoc / LibreOffice / poppler 路由
+    reg.register(FormatKind::Document, Arc::new(DocumentConverter));
     reg.register(
         FormatKind::Ebook,
         Arc::new(StubConverter {

@@ -44,6 +44,9 @@ npx --prefix ui tauri build
 
 > `tauri dev` 需在**项目根目录**执行。
 
+> ⚠️ **单独编译可执行文件（不打安装包）请用 `tauri build --no-bundle`**，
+> 不要用 `cargo build --release`：后者不会设置生产模式，程序会去连开发服务器 `localhost:1420`，启动即报「无法访问此页面」。
+
 ### CLI
 
 ```bash
