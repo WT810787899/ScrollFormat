@@ -32,10 +32,42 @@ impl ConvertContext {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ConvertOutput {
+    /// 主输出路径。多产物时（如 PDF 拆成多张图片）指向产物所在目录
     pub output: String,
     pub bytes: u64,
+    /// 其余产物路径（PDF 多页导图时是第 2 页起的文件）
+    #[serde(default)]
+    pub extra_outputs: Vec<String>,
+}
+
+impl ConvertOutput {
+    /// 单产物
+    pub fn single(output: impl Into<String>, bytes: u64) -> Self {
+        Self { output: output.into(), bytes, extra_outputs: Vec::new() }
+    }
+    /// 多产物：首个作为主输出，其余进 extra_outputs
+    pub fn many(mut outputs: Vec<String>) -> Self {
+        if outputs.is_empty() {
+            return Self::default();
+        }
+        let bytes = outputs
+            .first()
+            .and_then(|p| std::fs::metadata(p).ok().map(|m| m.len()))
+            .unwrap_or(0);
+        let head = outputs.remove(0);
+        Self { output: head, bytes, extra_outputs: outputs }
+    }
+    /// 全部产物（主输出在前）
+    pub fn all_outputs(&self) -> Vec<String> {
+        let mut v = Vec::with_capacity(self.extra_outputs.len() + 1);
+        if !self.output.is_empty() {
+            v.push(self.output.clone());
+        }
+        v.extend(self.extra_outputs.iter().cloned());
+        v
+    }
 }
 
 #[async_trait]

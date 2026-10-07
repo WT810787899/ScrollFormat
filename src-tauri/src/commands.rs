@@ -3,10 +3,23 @@ use std::sync::Arc;
 use scroll_format_app::AppService;
 use scroll_format_core::{NewTask, Task};
 use scroll_format_infra::EnvReport;
-use tauri::State;
+use tauri::{Manager, State};
 
 pub struct AppState {
     pub service: Arc<AppService>,
+}
+
+/// 以「无窗口」方式启动外部程序（避免黑窗一闪而过）
+fn spawn_silent(program: &str, arg: &std::path::Path) -> Result<(), String> {
+    let mut cmd = std::process::Command::new(program);
+    cmd.arg(arg);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    cmd.spawn().map_err(|e| e.to_string())?;
+    Ok(())
 }
 #[tauri::command]
 pub async fn create_task(state: State<'_, AppState>, new: NewTask) -> Result<Task, String> {
@@ -19,6 +32,7 @@ pub struct PerfStats {
     pub mem_used_mb: u64,
     pub mem_total_mb: u64,
     pub gpu_usage: Option<f32>,
+    pub gpu_encoder_usage: Option<f32>,
     pub gpu_mem_used_mb: Option<u64>,
     pub gpu_mem_total_mb: Option<u64>,
     pub gpu_name: Option<String>,
@@ -26,6 +40,24 @@ pub struct PerfStats {
     pub running: usize,
     pub queued: usize,
     pub progress: f32,
+}
+
+/// 监控栏的任务计数与整体进度
+///   running  = 转换中（含探测阶段）
+///   queued   = 等待中（排队 + 已暂停，都还没开始跑）
+///   progress = 仅对「排队/探测/转换中」的任务求平均——暂停中的任务进度恒为 0，
+///              混进平均值会把监控栏的进度一直压低
+pub fn task_counters(tasks: &[Task]) -> (usize, usize, f32) {
+    use scroll_format_core::TaskStatus as S;
+    let running = tasks.iter().filter(|t| matches!(t.status, S::Running | S::Probing)).count();
+    let queued = tasks.iter().filter(|t| matches!(t.status, S::Queued | S::Paused)).count();
+    let active: Vec<_> = tasks.iter().filter(|t| matches!(t.status, S::Queued | S::Probing | S::Running)).collect();
+    let progress = if active.is_empty() {
+        0.0
+    } else {
+        active.iter().map(|t| t.progress).sum::<f32>() / active.len() as f32
+    };
+    (running, queued, progress)
 }
 
 #[tauri::command]
@@ -42,20 +74,14 @@ pub async fn perf_stats(state: State<'_, AppState>) -> Result<PerfStats, String>
     sys.refresh_cpu_usage();
     sys.refresh_memory();
     let tasks = state.service.list_tasks().await;
-    let running = tasks.iter().filter(|t| t.status == scroll_format_core::TaskStatus::Running).count();
-    let queued = tasks.iter().filter(|t| t.status == scroll_format_core::TaskStatus::Queued).count();
-    let active: Vec<_> = tasks.iter().filter(|t| !t.status.is_terminal()).collect();
-    let progress = if active.is_empty() {
-        0.0
-    } else {
-        active.iter().map(|t| t.progress).sum::<f32>() / active.len() as f32
-    };
+    let (running, queued, progress) = task_counters(&tasks);
     let gpu = scroll_format_infra::env::probe_gpu().await;
     Ok(PerfStats {
         cpu_usage: sys.global_cpu_usage().clamp(0.0, 100.0),
         mem_used_mb: sys.used_memory() / 1024 / 1024,
         mem_total_mb: sys.total_memory() / 1024 / 1024,
         gpu_usage: gpu.usage,
+        gpu_encoder_usage: gpu.encoder_usage,
         gpu_mem_used_mb: gpu.mem_used_mb,
         gpu_mem_total_mb: gpu.mem_total_mb,
         gpu_name: gpu.name,
@@ -84,10 +110,7 @@ pub fn open_file(path: String) -> Result<(), String> {
     }
     #[cfg(windows)]
     {
-        std::process::Command::new("explorer.exe")
-            .arg(&p)
-            .spawn()
-            .map_err(|e| e.to_string())?;
+        spawn_silent("explorer.exe", &p)?;
     }
     #[cfg(target_os = "macos")]
     {
@@ -109,7 +132,7 @@ pub fn open_url(url: String) -> Result<(), String> {
     }
     #[cfg(windows)]
     {
-        std::process::Command::new("explorer.exe").arg(u).spawn().map_err(|e| e.to_string())?;
+        spawn_silent("explorer.exe", std::path::Path::new(u))?;
     }
     #[cfg(target_os = "macos")]
     {
@@ -128,10 +151,7 @@ pub fn open_in_explorer(path: String) -> Result<(), String> {
     let dir = if p.is_dir() { p } else { p.parent().map(|p| p.to_path_buf()).unwrap_or(p) };
     #[cfg(windows)]
     {
-        std::process::Command::new("explorer.exe")
-            .arg(dir)
-            .spawn()
-            .map_err(|e| e.to_string())?;
+        spawn_silent("explorer.exe", &dir)?;
     }
     #[cfg(target_os = "macos")]
     {
@@ -172,6 +192,40 @@ pub async fn clear_tasks(state: State<'_, AppState>, statuses: Option<Vec<String
 #[tauri::command]
 pub async fn delete_task(state: State<'_, AppState>, id: uuid::Uuid) -> Result<(), String> {
     state.service.delete_task(id).await.map_err(|e| e.to_string())
+}
+
+/// 修改任务参数：输出格式 / 质量 / 高级参数 / 输出目录 / 命名规则
+#[tauri::command]
+pub async fn update_task(
+    state: State<'_, AppState>,
+    id: uuid::Uuid,
+    options: scroll_format_core::ConvertOptions,
+    output_dir: Option<String>,
+    output_dir_mode: Option<scroll_format_core::OutDirMode>,
+    naming: Option<scroll_format_core::NamingRule>,
+) -> Result<scroll_format_core::Task, String> {
+    state
+        .service
+        .update_options(id, options, output_dir, output_dir_mode, naming)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// 前端首帧绘制完成后调用：显示启动时隐藏的窗口（消除白屏）
+#[tauri::command]
+pub fn frontend_ready(app: tauri::AppHandle) {
+    show_main_window(&app);
+}
+
+/// 找到主窗口并显示（幂等，可重复调用）
+pub fn show_main_window(app: &tauri::AppHandle) {
+    let win = app
+        .get_webview_window("main")
+        .or_else(|| app.webview_windows().into_values().next());
+    if let Some(w) = win {
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
 }
 
 #[tauri::command]
@@ -323,4 +377,77 @@ pub fn kv_set(key: String, value: String) -> Result<(), String> {
 pub fn render_name(rule: scroll_format_core::NamingRule, sample: String) -> Result<String, String> {
     scroll_format_core::render_output_name(&rule, &std::path::PathBuf::from(&sample), rule.index_start)
         .map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod task_counter_tests {
+    use super::*;
+    use scroll_format_core::{FormatKind, TaskItem, TaskStatus};
+
+    fn task(status: TaskStatus, progress: f32) -> Task {
+        Task {
+            id: uuid::Uuid::new_v4(),
+            name: "t".into(),
+            kind: FormatKind::Video,
+            status,
+            priority: 0,
+            items: vec![TaskItem {
+                input: "a.mp4".into(),
+                size: 0,
+                output: None,
+                outputs: vec![],
+                status,
+                progress,
+                error: None,
+                log: vec![],
+            }],
+            output_dir: std::path::PathBuf::from("out"),
+            options: scroll_format_core::ConvertOptions {
+                target_ext: "mp4".into(),
+                quality: None,
+                preset: None,
+                extra: serde_json::Value::Null,
+            },
+            output_dir_mode: scroll_format_core::OutDirMode::Custom,
+            naming: None,
+            progress,
+            error: None,
+            created_at: chrono::Utc::now(),
+            started_at: None,
+            finished_at: None,
+        }
+    }
+
+    #[test]
+    fn paused_task_does_not_drag_progress_down() {
+        // 1 个转换到 40% + 1 个暂停（进度恒为 0）：进度应为 40%，而不是 20%
+        let tasks = vec![
+            task(TaskStatus::Running, 0.4),
+            task(TaskStatus::Paused, 0.0),
+        ];
+        let (running, queued, progress) = task_counters(&tasks);
+        assert_eq!(running, 1);
+        assert_eq!(queued, 1); // 暂停计入等待中
+        assert!((progress - 0.4).abs() < 1e-5, "progress = {progress}");
+    }
+
+    #[test]
+    fn probing_counts_as_running_and_terminal_is_ignored() {
+        let tasks = vec![
+            task(TaskStatus::Probing, 0.1),
+            task(TaskStatus::Queued, 0.0),
+            task(TaskStatus::Completed, 1.0),
+            task(TaskStatus::Failed, 0.0),
+            task(TaskStatus::Cancelled, 0.0),
+        ];
+        let (running, queued, progress) = task_counters(&tasks);
+        assert_eq!(running, 1);
+        assert_eq!(queued, 1);
+        assert!((progress - 0.05).abs() < 1e-5, "progress = {progress}");
+    }
+
+    #[test]
+    fn empty_is_zero() {
+        assert_eq!(task_counters(&[]), (0, 0, 0.0));
+    }
 }

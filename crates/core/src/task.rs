@@ -76,7 +76,13 @@ fn default_priority() -> i32 { 0 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskItem {
     pub input: String,
+    /// 源文件大小（建任务时记录，任务卡片上展示；老数据为 0 表示未知）
+    #[serde(default)]
+    pub size: u64,
     pub output: Option<String>,
+    /// 全部产物（PDF 多页导图等场景会有多个）；`output` 指向主产物/目录
+    #[serde(default)]
+    pub outputs: Vec<String>,
     pub status: TaskStatus,
     pub progress: f32,
     pub error: Option<AppError>,
@@ -112,7 +118,9 @@ impl Task {
             .iter()
             .map(|f| TaskItem {
                 input: f.clone(),
+                size: std::fs::metadata(f).map(|m| m.len()).unwrap_or(0),
                 output: None,
+                outputs: Vec::new(),
                 status: TaskStatus::Queued,
                 progress: 0.0,
                 error: None,

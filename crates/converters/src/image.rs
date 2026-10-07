@@ -151,6 +151,6 @@ impl Converter for ImageConverter {
 
         ctx.report(1.0).await;
         ctx.note(format!("输出: {}", ctx.output.display())).await;
-        Ok(ConvertOutput { output: ctx.output.to_string_lossy().to_string(), bytes: result })
+        Ok(ConvertOutput::single(ctx.output.to_string_lossy().to_string(), result))
     }
 }

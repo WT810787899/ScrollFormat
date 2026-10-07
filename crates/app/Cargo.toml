@@ -16,3 +16,6 @@ futures.workspace = true
 scroll_format_core = { path = "../core" }
 scroll_format_infra = { path = "../infra" }
 scroll_format_converters = { path = "../converters" }
+
+[dev-dependencies]
+image.workspace = true
