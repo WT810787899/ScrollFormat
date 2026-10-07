@@ -4,9 +4,79 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>格式卷轴 ScrollFormat</title>
+    <!-- 首屏关键样式：CSS 资源加载前先铺主题底色，避免窗口显示瞬间的白屏闪烁 -->
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: #0b1020;
+      }
+      #boot {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 14px;
+        color: #e2e8f0;
+        font: 14px/1.6 "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+        background: #0b1020;
+      }
+      #boot .ring {
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        border: 3px solid rgba(148, 163, 184, 0.25);
+        border-top-color: #6366f1;
+        animation: bootspin 0.8s linear infinite;
+      }
+      #boot .sub {
+        color: #94a3b8;
+        font-size: 12px;
+        letter-spacing: 0.5px;
+      }
+      @keyframes bootspin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>
+    <!-- 启动页：React 首帧绘制后由 main.tsx 移除 -->
+    <div id="boot">
+      <div class="ring"></div>
+      <div>格式卷轴 ScrollFormat</div>
+      <div class="sub">正在启动…</div>
+    </div>
+    <script>
+      // 内联同步脚本：与 HTML 一起解析执行，不等 400KB 的打包产物，
+      // 首帧绘制完成就通知后端显示窗口（配合 visible:false 消除白屏）。
+      (function () {
+        var fired = false;
+        function notify() {
+          if (fired) return;
+          fired = true;
+          var i = window.__TAURI_INTERNALS__;
+          if (i && typeof i.invoke === "function") {
+            try {
+              i.invoke("frontend_ready");
+            } catch (e) {
+              /* main.tsx 里还有一次兜底上报 */
+            }
+          }
+        }
+        requestAnimationFrame(function () {
+          requestAnimationFrame(notify);
+        });
+        // 极端情况下 rAF 没触发，2 秒后无论如何上报一次
+        setTimeout(notify, 2000);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

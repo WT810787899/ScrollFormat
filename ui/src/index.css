@@ -130,6 +130,42 @@
 }
 
 @layer components {
+  /* ── 关键色光晕 ──────────────────────────────
+     注意：Tailwind 任意值里带「/ 透明度」（如 shadow-[...rgb(var(--accent)/0.9)]）
+     会被解析成颜色修饰符而整条丢弃，构建产物里根本没有这条规则。
+     所以凡是需要关键色 + 透明度的光晕，都写成这里的 CSS 类。 */
+  .sf-glow {
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25), 0 8px 22px -8px rgb(var(--accent) / 0.95);
+  }
+  .sf-glow-hover:hover {
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.32), 0 10px 28px -8px rgb(var(--accent));
+    filter: brightness(1.1);
+  }
+  .sf-glow-press:active {
+    transform: translateY(1px);
+    filter: brightness(0.95);
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2), 1px 1px 2px rgba(0, 0, 0, 0.35);
+  }
+  /* 色块外圈：悬浮时出现；选中时常驻（同一套样式，只是触发方式不同） */
+  .sf-hover-ring:hover,
+  .sf-ring-on {
+    box-shadow: 0 0 0 3px rgb(var(--accent) / 0.45);
+  }
+  /* 「开始转换」按钮的呼吸光晕：有待办任务时提示"现在可以点了"
+     （白环写进关键帧，避免动画把描边一起覆盖掉） */
+  @keyframes sf-start-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25), 0 8px 22px -8px rgb(var(--accent) / 0.95), 0 0 0 0 rgb(var(--accent) / 0.5);
+    }
+    50% {
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.25), 0 8px 22px -8px rgb(var(--accent) / 0.95), 0 0 0 7px rgb(var(--accent) / 0);
+    }
+  }
+  .sf-start-pulse {
+    animation: sf-start-pulse 2.2s ease-in-out infinite;
+  }
+
   .glass {
     background: rgba(255, 255, 255, var(--glass-alpha));
     border: 1px solid var(--panel-border);
@@ -159,6 +195,29 @@
   body.light .glass-fixed * {
     --glass-alpha: 0.72 !important;
     --glass-border-alpha: 0.7 !important;
+  }
+
+  /* 任务卡片底部投影：让卡片从列表背景里"浮"起来
+     用伪元素画在卡片下方，而不是 box-shadow——
+     box-shadow 的投影几何上必然同时向上下溢出，无法只保留底部那半边，
+     会在卡片顶部/头部留下一圈暗影。 */
+  .card-shadow { position: relative; }
+  .card-shadow::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 100%;
+    height: 8px;
+    /* 上实下虚的横向长条：阴影铺满卡片整个宽度（含左侧图标头部），
+       只在最外缘留 1.5% 的收口，避免出现生硬的直角边 */
+    background: linear-gradient(to bottom, rgba(0, 0, 0, 0.26), rgba(0, 0, 0, 0) 90%);
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 1.5%, #000 98.5%, transparent);
+    mask-image: linear-gradient(to right, transparent, #000 1.5%, #000 98.5%, transparent);
+    pointer-events: none;
+  }
+  body.light .card-shadow::after {
+    background: linear-gradient(to bottom, rgba(15, 23, 42, 0.14), rgba(15, 23, 42, 0) 90%);
   }
 
   .card-sel {

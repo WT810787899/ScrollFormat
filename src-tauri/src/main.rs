@@ -1,3 +1,6 @@
+// Release 构建时不附带控制台窗口，避免启动/后台运行时弹出 cmd 黑窗
+#![cfg_attr(all(not(debug_assertions), target_os = "windows"), windows_subsystem = "windows")]
+
 mod commands;
 
 use std::sync::Arc;
@@ -6,6 +9,7 @@ use scroll_format_app::AppService;
 use scroll_format_infra::Db;
 
 use commands::AppState;
+use tauri::Manager;
 
 fn main() {
     tracing_subscriber::fmt()
@@ -36,6 +40,17 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .manage(AppState { service })
         .setup(move |app| {
+            // ── 消除启动白屏 ──────────────────────────────
+            // 窗口配置为 visible:false：前端首帧绘制完成时调用 frontend_ready 才显示，
+            // 用户看到的一直是深色启动页/完整界面，不会闪一下白色空窗。
+            if let Some(win) = app.webview_windows().into_values().next() {
+                let watchdog = win.clone();
+                tauri::async_runtime::spawn(async move {
+                    // 兜底：万一前端脚本异常一直没上报，8 秒后照常显示，避免「进程在但看不见」
+                    tokio::time::sleep(std::time::Duration::from_secs(8)).await;
+                    let _ = watchdog.show();
+                });
+            }
             let handle = app.handle().clone();
             let mut rx = service2.events.subscribe();
             tauri::async_runtime::spawn(async move {
@@ -60,6 +75,7 @@ fn main() {
             commands::cancel_task,
             commands::retry_task,
             commands::delete_task,
+            commands::update_task,
             commands::clear_tasks,
             commands::task_action,
             commands::open_in_explorer,
@@ -84,6 +100,7 @@ fn main() {
             commands::render_name,
             commands::kv_get,
             commands::kv_set,
+            commands::frontend_ready,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
