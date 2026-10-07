@@ -1,12 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Image as ImageIcon, FileText, Music, Film, ListChecks, Settings as SettingsIcon, X, ScrollText, Play, Sun, Moon } from "lucide-react";
+import { Image as ImageIcon, FileText, Music, Film, ListChecks, Settings as SettingsIcon, X, ScrollText, Sun, Moon } from "lucide-react";
 import { useAppStore } from "./store";
 import { KindTab } from "./features/workspace/KindTab";
 import { TasksTab } from "./features/tasks/TasksTab";
 import { SettingsTab } from "./features/settings/SettingsTab";
 import { StatusBar } from "./components/StatusBar";
 import { WallpaperLayer } from "./components/Wallpaper";
+import { StartButton } from "./components/StartButton";
+import { useToasts } from "./components/Toast";
+import { api, isTauri } from "./lib/api";
 import { Kind } from "./lib/kinds";
 
 function WinBtn({ onClick, label, danger }: { onClick: () => void; label: string; danger?: boolean }) {
@@ -28,9 +31,78 @@ const TABS: { key: Tab; icon: any; label: string }[] = [
 ];
 
 export default function App() {
-  const { theme, toggleTheme } = useAppStore();
+  const { theme, toggleTheme, filesByKind } = useAppStore();
+  const { push } = useToasts();
   const [tab, setTab] = useState<Tab>("image");
   const [showSettings, setShowSettings] = useState(false);
+  /** 上次停留的工作台 TAB */
+  const lastKindRef = useRef<Tab>("image");
+  /** 待继续的任务数（已暂停 + 排队中；失败任务不计入） */
+  const [pendingTasks, setPendingTasks] = useState(0);
+
+  /** 文件区已添加但还没转化的文件数（当前工作台 TAB；在任务列表页看上一次的工作台） */
+  const filesKind: Tab = tab === "tasks" ? lastKindRef.current : tab;
+  const stagedCount = (filesByKind[filesKind] || []).length;
+
+  const switchTab = (key: Tab) => {
+    if (key !== "tasks") lastKindRef.current = key;
+    setTab(key);
+  };
+
+  /** 「开始转换」：任务列表页 = 继续所有暂停/未开始的任务（跳过失败）；工作台 = 按参数建任务并开始 */
+  const onStartClick = async () => {
+    if (tab !== "tasks") {
+      useAppStore.getState().requestStart();
+      return;
+    }
+    // 任务列表页：文件区还堆着文件时，跳回工作台把它们一起建任务并开始
+    if (stagedCount > 0) {
+      setTab(filesKind);
+      useAppStore.getState().requestStart();
+      return;
+    }
+    try {
+      const tasks = await api.listTasks();
+      const paused = tasks.filter((t) => t.status === "paused");
+      const queued = tasks.filter((t) => t.status === "queued");
+      if (paused.length === 0) {
+        push(
+          queued.length > 0
+            ? `${queued.length} 个任务已在队列中，无需再次开始`
+            : "没有可开始的任务（失败任务需先改参数或点重试）",
+          "info",
+        );
+        return;
+      }
+      await api.taskAction("resume", paused.map((t) => t.id));
+      push(
+        `已继续 ${paused.length} 个暂停任务${queued.length > 0 ? `，${queued.length} 个在队列中等待` : ""}${
+          tasks.some((t) => t.status === "failed") ? "（失败任务已跳过）" : ""
+        }`,
+        "success",
+      );
+    } catch (e: any) {
+      push(String(e), "error");
+    }
+  };
+
+  // 顶栏按钮的待办角标 + 呼吸提示：订阅任务事件实时刷新
+  useEffect(() => {
+    const count = () =>
+      api
+        .listTasks()
+        .then((ts) => setPendingTasks(ts.filter((t) => t.status === "paused" || t.status === "queued").length))
+        .catch(() => {});
+    count();
+    if (!isTauri()) return;
+    let un: (() => void)[] = [];
+    import("@tauri-apps/api/event").then(async ({ listen }) => {
+      for (const ev of ["task://created", "task://updated", "task://completed", "task://failed"]) {
+        un.push(await listen(ev, count));
+      }
+    });
+    return () => un.forEach((f) => f());
+  }, []);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -131,7 +203,7 @@ export default function App() {
           {TABS.map(({ key, icon: Icon, label }) => (
             <button
               key={key}
-              onClick={() => setTab(key)}
+              onClick={() => switchTab(key)}
               className={`flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-sm transition ${tab === key ? "tab-active" : "hover:bg-slate-500/15 hover:bg-slate-500/25"}`}
             >
               <Icon className="w-4 h-4" />
@@ -139,14 +211,15 @@ export default function App() {
             </button>
           ))}
         </nav>
-        {tab !== "tasks" && (
-          <button
-            onClick={() => useAppStore.getState().requestStart()}
-            className="flex items-center gap-1.5 accent-grad hover:opacity-90 text-white rounded-xl px-5 py-1.5 text-sm"
-          >
-            <Play className="w-4 h-4" />开始转换
-          </button>
-        )}
+        {/* 开始转换：常驻顶栏；工作台建任务并开始，任务列表页继续所有暂停/未开始的任务 */}
+        {/* 开始转换：常驻顶栏；工作台建任务并开始，任务列表页继续所有暂停/未开始的任务 */}
+        <StartButton
+          queueMode={tab === "tasks"}
+          pendingTasks={pendingTasks}
+          stagedFiles={stagedCount}
+          onStart={onStartClick}
+          className="ml-10"
+        />
         <div data-tauri-drag-region className="flex-1" />
         <button
           onClick={toggleTheme}
@@ -182,7 +255,7 @@ export default function App() {
             onClick={() => setShowSettings(false)}
           >
             <motion.div
-              className="glass glass-fixed rounded-3xl p-5 relative"
+              className="glass glass-fixed rounded-3xl p-5 relative max-h-[92vh] flex flex-col min-h-0"
               initial={{ scale: 0.95, y: 12 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.95, y: 12 }}

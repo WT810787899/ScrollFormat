@@ -22,12 +22,15 @@ export function GlassSelect({
   options,
   children,
   className = "",
+  title,
 }: {
   value: string;
   onChange: (v: string) => void;
   options?: SelectOption[];
   children?: React.ReactNode;
   className?: string;
+  /** 悬浮说明（原先写在 ParamField 的 hint 上会占一整行，太占地方） */
+  title?: string;
 }) {
   const resolved = useMemo<SelectOption[]>(() => {
     if (options) return options;
@@ -117,6 +120,7 @@ export function GlassSelect({
       <button
         ref={btn}
         type="button"
+        title={title}
         onClick={() => setOpen((v) => !v)}
         className={`w-full min-w-[132px] h-7 flex items-center gap-2 rounded-lg px-2.5 text-xs text-left transition bg-slate-500/15 hover:bg-slate-500/25 border border-white/10 focus:outline-none focus:border-accent/60 ${className}`}
       >

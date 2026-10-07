@@ -2,7 +2,11 @@ import { invoke } from "@tauri-apps/api/core";
 
 export interface TaskItem {
   input: string;
+  /** 源文件大小（字节，0 = 未知/老数据） */
+  size: number;
   output: string | null;
+  /** 全部产物路径（PDF 多页导图等场景有多个）；老数据可能没有这个字段 */
+  outputs?: string[];
   status: string;
   progress: number;
   error: { code: string; message: string } | null;
@@ -87,12 +91,16 @@ export const api = {
   cancelTask: (id: string) => invoke<void>("cancel_task", { id }),
   retryTask: (id: string) => invoke<void>("retry_task", { id }),
   deleteTask: (id: string) => invoke<void>("delete_task", { id }),
+  updateTask: (
+    id: string,
+    payload: { options: { target_ext: string; quality?: number | null; preset?: string | null; extra: any }; output_dir?: string; output_dir_mode?: string; naming?: any },
+  ) => invoke<Task>("update_task", { id, ...payload }),
   clearTasks: (statuses: string[]) => invoke<number>("clear_tasks", { statuses }),
   taskAction: (action: string, ids: string[]) => invoke<void>("task_action", { action, ids }),
   openInExplorer: (path: string) => invoke<void>("open_in_explorer", { path }),
   openUrl: (url: string) => invoke<void>("open_url", { url }),
   openFile: (path: string) => invoke<void>("open_file", { path }),
-  perfStats: () => invoke<{ cpu_usage: number; mem_used_mb: number; mem_total_mb: number; gpu_usage: number | null; gpu_mem_used_mb: number | null; gpu_mem_total_mb: number | null; gpu_name: string | null; gpu_available: boolean; running: number; queued: number; progress: number }>("perf_stats"),
+  perfStats: () => invoke<{ cpu_usage: number; mem_used_mb: number; mem_total_mb: number; gpu_usage: number | null; gpu_encoder_usage: number | null; gpu_mem_used_mb: number | null; gpu_mem_total_mb: number | null; gpu_name: string | null; gpu_available: boolean; running: number; queued: number; progress: number }>("perf_stats"),
   pauseTask: (id: string) => invoke<void>("pause_task", { id }),
   resumeTask: (id: string) => invoke<void>("resume_task", { id }),
   probeEnv: () => invoke<EnvReport>("probe_env"),

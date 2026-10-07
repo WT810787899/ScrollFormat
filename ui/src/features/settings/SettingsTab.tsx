@@ -122,7 +122,8 @@ export function SettingsTab() {
   };
 
   return (
-    <div className="w-[560px] h-[420px] overflow-hidden flex flex-col">
+    /* 面板尺寸：随窗口高度自适应（最高 600px），窗口不够高时也不会顶出屏幕 */
+    <div className="w-[620px] max-w-[92vw] h-[min(70vh,600px)] min-h-[360px] overflow-hidden flex flex-col">
       <div className="flex gap-1 mb-3 flex-none">
         {TABS.map((t) => (
           <button key={t.key} onClick={() => setTab(t.key)} className={`px-3 py-1 rounded-xl text-sm ${tab === t.key ? "tab-active" : "hover:bg-slate-500/15 hover:bg-slate-500/25"}`}>
@@ -150,13 +151,20 @@ export function SettingsTab() {
         {s && tab === "appearance" && (
           <div className="flex flex-col gap-3">
             <ParamField label="关键色" hint="影响按钮、进度条、选中高亮与背景光斑">
-              <div className="flex flex-wrap gap-1.5 max-h-[112px] overflow-auto pr-1">
+              {/* 注意两点：
+                  1) 色块不能用 hover:scale —— 变换后的元素会计入「可滚动溢出区域」，
+                     贴着边界的行一放大就冒出滚动条，滚动条一出现宽度又变化 → 换行重排 → 闪烁；
+                  2) 选中态与悬浮态用完全相同的外圈样式（.sf-ring-on 与 .sf-hover-ring 同一条声明），
+                     容器留了 py-1，外圈不会被 overflow 裁掉。 */}
+              <div className="flex flex-wrap gap-1.5 max-h-[120px] overflow-y-auto overflow-x-hidden py-1 pr-1">
                 {ACCENTS.map((a) => (
                   <button
                     key={a.id}
                     title={a.label}
                     onClick={() => setAccent(a.id, a.rgb)}
-                    className={`w-6 h-6 rounded-full ring-offset-2 ring-offset-transparent transition hover:scale-110 ${currentAccent === a.id ? "ring-2" : ""}`}
+                    className={`w-6 h-6 rounded-full transition-[filter,box-shadow] duration-150 hover:brightness-110 ${
+                      currentAccent === a.id ? "sf-ring-on" : "sf-hover-ring"
+                    }`}
                     style={{ backgroundColor: `rgb(${a.rgb})` }}
                   />
                 ))}

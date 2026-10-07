@@ -1,12 +1,19 @@
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { RotateCcw, Trash2, Pause, Play, ChevronDown, ChevronRight, X, FolderInput, FolderOutput, ExternalLink } from "lucide-react";
+import { RotateCcw, Trash2, Pause, Play, ChevronDown, ChevronRight, X, FolderInput, FolderOutput, ExternalLink, Settings2, ArrowRight } from "lucide-react";
 import { api, Task, isTauri } from "../../lib/api";
 import { useToasts } from "../../components/Toast";
 import { ContextMenu, MenuItem } from "../../components/ContextMenu";
 import { useGlobalContextMenu } from "../../components/ContextMenuProvider";
 import { FileKindIcon, fileKind } from "../../lib/fileIcon";
+import { formatSize, formatDateShort, formatDateTime } from "../../lib/format";
+import { TaskEditDialog } from "./TaskEditDialog";
+
+/** 卡片里各项之间的竖线分隔符 */
+function Sep() {
+  return <span className="flex-none w-px h-3 bg-current opacity-25" aria-hidden />;
+}
 
 const SUBTABS = [
   { key: "all", label: "全部" },
@@ -46,6 +53,9 @@ export function TasksTab() {
   const [liveProgress, setLiveProgress] = useState<Record<string, number>>({});
   const [liveLogs, setLiveLogs] = useState<Record<string, string[]>>({});
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  /** 正在改参数的任务 id（弹窗内容始终取最新任务快照，避免状态过期） */
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const editing = editingId ? tasks.find((t) => t.id === editingId) ?? null : null;
   const { push } = useToasts();
 
   const refresh = useCallback(() => api.listTasks().then(setTasks).catch(() => {}), []);
@@ -248,6 +258,11 @@ export function TasksTab() {
         { label: ids.length > 1 ? `开始 / 继续（${ids.length}）` : "开始 / 继续", onClick: () => act("resume", "开始", ids) },
         { label: ids.length > 1 ? `暂停（${ids.length}）` : "暂停", onClick: () => act("pause", "暂停", ids) },
         { label: ids.length > 1 ? `重试（${ids.length}）` : "重试", onClick: () => act("retry", "重试", ids) },
+        {
+          label: "修改参数…",
+          disabled: t.status === "running" || t.status === "probing",
+          onClick: () => setEditingId(t.id),
+        },
         { label: ids.length > 1 ? `取消任务（${ids.length}）` : "取消任务", danger: true, onClick: () => act("cancel", "取消", ids) },
         { divider: true, label: "" },
         {
@@ -323,11 +338,14 @@ export function TasksTab() {
         onPointerDown={onPointerDown}
         onClick={(e) => e.stopPropagation()}
         onScroll={() => setMarquee(null)}
-        className="flex-1 overflow-auto flex flex-col gap-2 pr-1 relative select-none"
+        className="flex-1 overflow-auto flex flex-col gap-2.5 pr-1 pb-4 relative select-none"
       >
         {filtered.length === 0 && <p className="text-sm opacity-50 text-center mt-8">暂无任务</p>}
         {filtered.map((t) => {
           const pct = ((liveProgress[t.id] ?? t.progress) * 100).toFixed(0);
+          const itemSize = formatSize(t.items[0]?.size);
+          const addedAt = formatDateShort(t.created_at);
+          const addedFull = formatDateTime(t.created_at);
           return (
             <motion.div
               layout
@@ -335,8 +353,7 @@ export function TasksTab() {
               data-card={t.id}
               onClick={(e) => selectCard(t.id, e)}
               onContextMenu={(e) => openMenu(e, t)}
-              title="单击选中 · Ctrl+单击多选 · 空白处按住拖拽框选 · 右键更多操作"
-              className={`bg-slate-500/10 rounded-2xl px-3 py-1.5 cursor-pointer transition border ${selected.has(t.id) ? "card-sel" : "border-transparent hover:bg-slate-500/15 hover:bg-slate-500/25"}`}
+              className={`card-shadow bg-slate-500/10 rounded-2xl px-3 py-1.5 cursor-pointer transition border ${selected.has(t.id) ? "card-sel" : "border-transparent hover:bg-slate-500/15 hover:bg-slate-500/25"}`}
             >
               <div className="flex items-stretch gap-2">
                 <div className="w-8 flex-none flex items-center justify-center">
@@ -348,19 +365,58 @@ export function TasksTab() {
                   {expanded.has(t.id) ? <ChevronDown className="w-3.5 h-3.5 opacity-60" /> : <ChevronRight className="w-3.5 h-3.5 opacity-60" />}
                 </button>
                 <div className="flex-1 min-w-0">
-                  <p className={`font-medium truncate text-sm ${selected.has(t.id) ? "text-accent" : ""}`} title={t.items[0]?.input}>{fileName(t)}</p>
-                  <p className="text-xs opacity-50 truncate">→ {t.options.target_ext} · {t.output_dir.split(/[\\/]/).pop()}</p>
+                  {/* 全部在同一行，竖线分隔：
+                      文件名 │ 大小 │ 添加日期 │ →输出格式(关键色) │ 📁目录
+                      只有文件名可截断，其余项 flex-none 始终完整可见 */}
+                  <div className="flex items-center gap-2 min-w-0 text-xs">
+                    <p className={`font-medium truncate text-sm ${selected.has(t.id) ? "text-accent" : ""}`} title={t.items[0]?.input}>{fileName(t)}</p>
+                    {itemSize && (
+                      <>
+                        <Sep />
+                        <span className="flex-none opacity-60 tabular-nums" title={`源文件大小 ${itemSize}`}>
+                          {itemSize}
+                        </span>
+                      </>
+                    )}
+                    {addedAt && (
+                      <>
+                        <Sep />
+                        <span className="flex-none opacity-60 tabular-nums" title={`添加于 ${addedFull}`}>
+                          {addedAt}
+                        </span>
+                      </>
+                    )}
+                    <Sep />
+                    <span className="flex-none flex items-center gap-1">
+                      <ArrowRight className="w-3 h-3 opacity-60" />
+                      <span className="text-accent font-medium">{t.options.target_ext}</span>
+                    </span>
+                    <Sep />
+                    <span className="flex-none flex items-center gap-1 opacity-60 min-w-0">
+                      <FolderOutput className="w-3 h-3 flex-none" />
+                      <span className="truncate">{t.output_dir.split(/[\\/]/).pop()}</span>
+                    </span>
+                  </div>
                 </div>
                 <span className={`text-xs px-2 py-0.5 rounded-full whitespace-nowrap ${STATUS_COLOR[t.status] || "bg-slate-500/15 hover:bg-slate-500/25"}`}>
                   {STATUS_LABEL[t.status] || t.status}
                 </span>
                 {t.error && <span className="text-xs text-rose-600 dark:text-rose-300">[{t.error.code}]</span>}
                 <button
-                  title="打开输出文件（系统默认程序）"
+                  title="修改该任务的转换参数（模板与工作台一致）"
+                  onClick={(e) => { e.stopPropagation(); setEditingId(t.id); }}
+                  className="h-7 px-2 flex items-center gap-1 rounded-lg bg-slate-500/15 hover:bg-accent-soft hover:text-accent transition text-xs whitespace-nowrap"
+                >
+                  <Settings2 className="w-3.5 h-3.5" />修改
+                </button>
+                <button
+                  title={(t.items[0]?.outputs?.length || 0) > 1 ? `打开共 ${t.items[0]!.outputs!.length} 个产物所在目录` : "打开输出文件（系统默认程序）"}
                   onClick={(e) => {
                     e.stopPropagation();
                     const out = t.items[0]?.output;
                     if (!out) return push("文件尚未生成", "info");
+                    // 多产物（PDF 拆页）时主输出是目录，直接在资源管理器里看
+                    if ((t.items[0]?.outputs?.length || 0) > 1) return api.openInExplorer(out);
                     api.openFile(out).catch((err) => push(String(err), "error"));
                   }}
                   disabled={!t.items[0]?.output}
@@ -419,11 +475,19 @@ export function TasksTab() {
                         <span className="opacity-60 w-10 text-right tabular-nums">{(it.progress * 100).toFixed(0)}%</span>
                         <button title="打开源目录" onClick={() => api.openInExplorer(it.input)} className="opacity-50 group-hover:opacity-100 hover:text-accent transition"><FolderInput className="w-3.5 h-3.5" /></button>
                         {it.output && <button title="打开输出目录" onClick={() => api.openInExplorer(it.output!)} className="opacity-50 group-hover:opacity-100 hover:text-emerald-600 dark:text-emerald-300 transition"><FolderOutput className="w-3.5 h-3.5" /></button>}
-                        {it.output && <button title="打开输出文件" onClick={() => api.openFile(it.output!).catch(() => {})} className="opacity-50 group-hover:opacity-100 hover:text-accent transition"><ExternalLink className="w-3.5 h-3.5" /></button>}
+                        {(it.outputs?.length || 0) > 1 ? (
+                           <button title={`打开共 ${it.outputs!.length} 个产物所在目录`} onClick={() => api.openInExplorer(it.output!)} className="opacity-50 group-hover:opacity-100 hover:text-accent transition"><ExternalLink className="w-3.5 h-3.5" /></button>
+                         ) : (
+                           <button title="打开输出文件" onClick={() => api.openFile(it.output!).catch(() => {})} className="opacity-50 group-hover:opacity-100 hover:text-accent transition"><ExternalLink className="w-3.5 h-3.5" /></button>
+                         )}
                         {it.status === "failed" && <button title="重试此任务" onClick={() => api.retryTask(t.id).then(refresh)} className="underline">重试</button>}
                       </div>
                       {it.error && <p className="text-rose-600 dark:text-rose-300">{it.error.message}</p>}
-                      {it.output && <p className="opacity-50 truncate" title={it.output}>→ {it.output}</p>}
+                      {it.output && ((it.outputs?.length || 0) > 1 ? (
+                           <p className="opacity-60 truncate" title={it.outputs!.join("\n")}>→ 共 {it.outputs!.length} 个文件：{it.output.split(/[\\/]/).pop()}</p>
+                         ) : (
+                           <p className="opacity-50 truncate" title={it.output}>→ {it.output}</p>
+                         ))}
                     </div>
                   ))}
                   <div className="mt-1 bg-slate-900/40 dark:bg-black/30 rounded-xl p-2 max-h-40 overflow-auto font-mono text-[11px] opacity-80">
@@ -454,6 +518,8 @@ export function TasksTab() {
         )}
 
       {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
+
+      {editing && <TaskEditDialog task={editing} onClose={() => setEditingId(null)} onSaved={refresh} />}
     </div>
   );
 }
