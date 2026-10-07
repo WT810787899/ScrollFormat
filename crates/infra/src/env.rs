@@ -18,6 +18,8 @@ pub struct GpuInfo {
     pub available: bool,
     pub name: Option<String>,
     pub usage: Option<f32>,
+    /// 视频编码引擎占用（NVENC/NVDEC 负载时才明显，用于确认是否真在用显卡编码）
+    pub encoder_usage: Option<f32>,
     pub mem_used_mb: Option<u64>,
     pub mem_total_mb: Option<u64>,
     pub source: String,
@@ -37,7 +39,7 @@ pub async fn probe_gpu() -> GpuInfo {
     };
     let output = tokio::time::timeout(
         std::time::Duration::from_millis(2500),
-        tokio::process::Command::new(&smi)
+        crate::process::silent_command(&smi)
             .args([
                 "--query-gpu=utilization.gpu,memory.used,memory.total,name",
                 "--format=csv,noheader,nounits",
@@ -67,11 +69,32 @@ pub async fn probe_gpu() -> GpuInfo {
         };
     }
     let cols: Vec<&str> = line.split(',').map(|s| s.trim()).collect();
+    // 编码引擎占用单独查一次：部分驱动不支持该字段，失败不影响主查询
+    let encoder_usage = tokio::time::timeout(
+        std::time::Duration::from_millis(1500),
+        crate::process::silent_command(&smi)
+            .args(["--query-gpu=utilization.encoder", "--format=csv,noheader,nounits"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .output(),
+    )
+    .await
+    .ok()
+    .and_then(|r| r.ok())
+    .and_then(|o| {
+        String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .find(|l| !l.trim().is_empty())
+            .and_then(|l| l.trim().parse::<f32>().ok())
+    });
     GpuInfo {
         available: true,
         usage: cols.first().and_then(|s| s.parse().ok()),
-        mem_used_mb: cols.get(1).and_then(|s| s.parse().ok()).map(|v: u64| v / 1024),
-        mem_total_mb: cols.get(2).and_then(|s| s.parse().ok()).map(|v: u64| v / 1024),
+        encoder_usage,
+        // nounits 输出的已是 MiB，无需再换算（此前多除了一次 1024，导致 5GB 卡显示成 5MB）
+        mem_used_mb: cols.get(1).and_then(|s| s.parse().ok()),
+        mem_total_mb: cols.get(2).and_then(|s| s.parse().ok()),
         name: cols.get(3).map(|s| s.to_string()),
         source: "nvidia-smi".into(),
         suggestion: String::new(),
@@ -92,7 +115,7 @@ pub struct EnvReport {
     pub warnings: Vec<String>,
 }
 
-const TOOLS: &[&str] = &["ffmpeg", "ffprobe", "pandoc", "libreoffice", "calibre", "7z", "imagemagick"];
+const TOOLS: &[&str] = &["ffmpeg", "ffprobe", "pandoc", "libreoffice", "calibre", "7z", "imagemagick", "pdftoppm"];
 
 pub async fn probe_env() -> EnvReport {
     // CPU 采样需要两次刷新才能得到有效占用率
@@ -108,7 +131,12 @@ pub async fn probe_env() -> EnvReport {
     let settings = crate::settings::load();
     let mut tools = vec![];
     for name in TOOLS {
-        let real = if *name == "libreoffice" { "soffice" } else { name };
+        // 展示名 → 实际可执行文件名
+        let real = match *name {
+            "libreoffice" => "soffice",
+            "imagemagick" => "magick",
+            other => other,
+        };
         let manual = match *name {
             "ffmpeg" => Some(settings.ffmpeg_path.trim().to_string()),
             "ffprobe" => Some(settings.ffprobe_path.trim().to_string()),
@@ -129,9 +157,11 @@ pub async fn probe_env() -> EnvReport {
         } else {
             match *name {
                 "ffmpeg" | "ffprobe" => "建议安装 ffmpeg 或将 sidecar 随包分发".to_string(),
-                "pandoc" => "文档转换需要 pandoc".to_string(),
-                "libreoffice" => "办公文档转换需要 LibreOffice".to_string(),
+                "pandoc" => "可选：能保留 docx/rtf 的标题/列表结构（内置引擎只抽正文）".to_string(),
+                "libreoffice" => "可选：装上后 docx/odt/rtf → pdf/docx 等转换能保留原始排版".to_string(),
                 "calibre" => "电子书转换需要 calibre".to_string(),
+                "imagemagick" => "可选：PDF 转图片的内置引擎不可用时作为备用".to_string(),
+                "pdftoppm" => "可选：PDF 转 png/jpg 已由内置引擎完成，这里只是备用".to_string(),
                 _ => "未安装".to_string(),
             }
         };
@@ -190,7 +220,7 @@ async fn probe_version(path: &PathBuf, tool: &str) -> Option<String> {
         "7z" => &[],
         _ => &["-version"],
     };
-    let out = tokio::process::Command::new(path)
+    let out = crate::process::silent_command(path)
         .args(args)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
